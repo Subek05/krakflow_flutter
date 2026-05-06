@@ -1,7 +1,7 @@
 class Task {
   final String title;
   final String deadline;
-  final bool done;
+  bool done;
   final String priority;
 
   Task({required this.title, required this.deadline, required this.done, required this.priority});
