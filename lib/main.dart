@@ -21,14 +21,11 @@ class TaskApiService {
   static const String baseUrl = "https://dummyjson.com";
 
   static Future<List<Task>> fetchTasks() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/todos"),
-    );
+    final response = await http.get(Uri.parse("$baseUrl/todos"));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       final List todos = data["todos"];
-
       return todos.map((todo) {
         return Task(
           title: todo["todo"],
@@ -53,17 +50,91 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String selectedFilter = "wszystkie";
   late Future<List<Task>> tasksFuture;
+  List<Task> _localTasks = [];
 
   @override
   void initState() {
     super.initState();
-    tasksFuture = TaskApiService.fetchTasks();
+    tasksFuture = TaskApiService.fetchTasks().then((tasks) {
+      _localTasks = tasks;
+      return _localTasks;
+    });
   }
 
   void _retry() {
     setState(() {
-      tasksFuture = TaskApiService.fetchTasks();
+      tasksFuture = TaskApiService.fetchTasks().then((tasks) {
+        _localTasks = tasks;
+        return _localTasks;
+      });
     });
+  }
+
+  void _showAddTaskDialog(BuildContext context) {
+    final titleController = TextEditingController();
+    final deadlineController = TextEditingController();
+    String selectedPriority = "średni";
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text("Nowe zadanie"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(labelText: "Nazwa zadania"),
+              ),
+              TextField(
+                controller: deadlineController,
+                decoration: const InputDecoration(labelText: "Termin"),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: selectedPriority,
+                decoration: const InputDecoration(labelText: "Priorytet"),
+                items: const [
+                  DropdownMenuItem(value: "wysoki", child: Text("Wysoki")),
+                  DropdownMenuItem(value: "średni", child: Text("Średni")),
+                  DropdownMenuItem(value: "niski", child: Text("Niski")),
+                ],
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedPriority = value!;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Anuluj"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (titleController.text.isNotEmpty) {
+                  setState(() {
+                    _localTasks.add(Task(
+                      title: titleController.text,
+                      deadline: deadlineController.text.isEmpty
+                          ? "brak"
+                          : deadlineController.text,
+                      done: false,
+                      priority: selectedPriority,
+                    ));
+                  });
+                  Navigator.pop(ctx);
+                }
+              },
+              child: const Text("Dodaj"),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -71,6 +142,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("KrakFlow"),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddTaskDialog(context),
+        child: const Icon(Icons.add),
       ),
       body: FutureBuilder<List<Task>>(
         future: tasksFuture,
@@ -83,18 +158,16 @@ class _HomeScreenState extends State<HomeScreen> {
             return ErrorView(onRetry: _retry);
           }
 
-          final tasks = snapshot.data ?? [];
-
-          List<Task> filteredTasks = tasks;
+          List<Task> filteredTasks = _localTasks;
 
           if (selectedFilter == "wykonane") {
-            filteredTasks = tasks.where((task) => task.done).toList();
+            filteredTasks = _localTasks.where((task) => task.done).toList();
           } else if (selectedFilter == "do zrobienia") {
-            filteredTasks = tasks.where((task) => !task.done).toList();
+            filteredTasks = _localTasks.where((task) => !task.done).toList();
           }
 
           final int zadaniaWykonane =
-              tasks.where((task) => task.done).length;
+              _localTasks.where((task) => task.done).length;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  "Masz dzisiaj ${tasks.length} zadań",
+                  "Masz dzisiaj ${_localTasks.length} zadań",
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -132,7 +205,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: filteredTasks.length,
                   itemBuilder: (context, index) {
                     final task = filteredTasks[index];
-
                     return TaskCard(
                       title: task.title,
                       subtitle:
@@ -233,7 +305,6 @@ class FilterBar extends StatelessWidget {
       child: Row(
         children: ["wszystkie", "do zrobienia", "wykonane"].map((filter) {
           final bool active = selectedFilter == filter;
-
           return TextButton(
             onPressed: () => onFilterChanged(filter),
             style: TextButton.styleFrom(
@@ -255,13 +326,10 @@ class FilterBar extends StatelessWidget {
 Color _priorityColor(String priority) {
   switch (priority.toLowerCase()) {
     case 'wysoki':
-    case 'high':
       return Colors.red;
     case 'średni':
-    case 'medium':
       return Colors.orange;
     case 'niski':
-    case 'low':
       return Colors.green;
     default:
       return Colors.grey;
